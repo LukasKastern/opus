@@ -4,7 +4,6 @@ const builtin = @import("builtin");
 pub fn build(b: *std.Build) void {
     const cross_target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const target = cross_target.result;
 
     const lib = b.addStaticLibrary(.{
         .name = "opus",
@@ -23,11 +22,13 @@ pub fn build(b: *std.Build) void {
     lib.addIncludePath(.{ .path = "silk/float" });
     lib.addIncludePath(.{ .path = "silk/fixed" });
 
-    lib.addCSourceFiles(.{ .files = sources ++ silk_sources_float, .flags = &.{} });
-    if (target.cpu.arch.isX86()) {
-        const sse = target.cpu.features.isEnabled(@intFromEnum(std.Target.x86.Feature.sse));
-        const sse2 = target.cpu.features.isEnabled(@intFromEnum(std.Target.x86.Feature.sse2));
-        const sse4_1 = target.cpu.features.isEnabled(@intFromEnum(std.Target.x86.Feature.sse4_1));
+    var native_target = std.zig.system.NativeTargetInfo.detect(cross_target) catch unreachable;
+
+    lib.addCSourceFiles(sources ++ silk_sources_float, &.{});
+    if (cross_target.cpu_arch.?.isX86()) {
+        const sse = native_target.target.cpu.features.isEnabled(@intFromEnum(std.Target.x86.Feature.sse));
+        const sse2 = native_target.target.cpu.features.isEnabled(@intFromEnum(std.Target.x86.Feature.sse2));
+        const sse4_1 = native_target.target.cpu.features.isEnabled(@intFromEnum(std.Target.x86.Feature.sse4_1));
 
         // addConfigHeader is a bit painful to work with when the check is #if defined(FOO)
         if (sse and sse2 and sse4_1) {
@@ -56,15 +57,15 @@ pub fn build(b: *std.Build) void {
             lib.addConfigHeader(config_header);
         }
 
-        lib.addCSourceFiles(.{ .files = celt_sources_x86 ++ silk_sources_x86, .flags = &.{} });
-        if (sse) lib.addCSourceFiles(.{ .files = celt_sources_sse, .flags = &.{} });
-        if (sse2) lib.addCSourceFiles(.{ .files = celt_sources_sse2, .flags = &.{} });
-        if (sse4_1) lib.addCSourceFiles(.{ .files = celt_sources_sse4_1 ++ silk_sources_sse4_1, .flags = &.{} });
+        lib.addCSourceFiles(celt_sources_x86 ++ silk_sources_x86, &.{});
+        if (sse) lib.addCSourceFiles(celt_sources_sse, &.{});
+        if (sse2) lib.addCSourceFiles(celt_sources_sse2, &.{});
+        if (sse4_1) lib.addCSourceFiles(celt_sources_sse4_1 ++ silk_sources_sse4_1, &.{});
     }
 
-    if (target.cpu.arch.isAARCH64() or target.cpu.arch.isARM()) {
-        const neon = target.cpu.features.isEnabled(@intFromEnum(std.Target.aarch64.Feature.neon)) or
-            target.cpu.features.isEnabled(@intFromEnum(std.Target.arm.Feature.neon));
+    if (cross_target.cpu_arch.?.isAARCH64() or cross_target.cpu_arch.?.isARM()) {
+        const neon = native_target.target.cpu.features.isEnabled(@intFromEnum(std.Target.aarch64.Feature.neon)) or
+            native_target.target.cpu.features.isEnabled(@intFromEnum(std.Target.arm.Feature.neon));
 
         const config_header = b.addConfigHeader(.{ .style = .blank }, .{
             .OPUS_ARM_MAY_HAVE_NEON_INTR = neon,
@@ -72,8 +73,8 @@ pub fn build(b: *std.Build) void {
         });
         lib.addConfigHeader(config_header);
 
-        lib.addCSourceFiles(.{ .files = celt_sources_arm ++ silk_sources_arm, .flags = &.{} });
-        if (neon) lib.addCSourceFiles(.{ .files = celt_sources_arm_neon ++ silk_sources_arm_neon, .flags = &.{} });
+        lib.addCSourceFiles(celt_sources_arm ++ silk_sources_arm, &.{});
+        if (neon) lib.addCSourceFiles(celt_sources_arm_neon ++ silk_sources_arm_neon, &.{});
     }
 
     lib.installHeadersDirectory("include", "");
